@@ -1,11 +1,11 @@
 # Scripts for CAD snATAC data analysis
 # "Single-nucleus chromatin accessibility profiling highlights regulatory mechanisms of coronary artery disease risk"
-This repo contains all the data analysis scripts in the manuscript "Single-nucleus chromatin accessibility profiling highlights regulatory mechanisms of coronary artery disease risk". In the following repo, 1_snATAC_analysis.r includes scripts for the single nucleus ATAC-seq data analysis, 2_scRNA_analysis.r includes scripts for the single cell RNA-seq data analysis, and 3_SVMpipeline/ and 4_RASQUAL_caQTL/ folders include various scripts for the variant effect predictions and allele-specific based caQTL mapping analyses using snATAC-seq peaks, respectively. See the details in the sections below. 
+This repo contains all the data analysis scripts in the manuscript "Single-nucleus chromatin accessibility profiling highlights regulatory mechanisms of coronary artery disease risk". In the following repo, 1_scATAC_analysis.r includes scripts for the single nucleus ATAC-seq data analysis, 2_scRNA_analysis.r includes scripts for the single cell RNA-seq data analysis, and 3_SVMpipeline/ and 4_RASQUAL_caQTL/ folders include various scripts for the variant effect predictions and allele-specific based caQTL mapping analyses using snATAC-seq peaks, respectively. See the details in the sections below. 
 
 ## 0. Requirements
 The following environments/packages are required to run the scripts. 
 
-Single cell data analysis (snATAC_analysis.r and scRNA_analysis.r)
+Single cell data analysis (scATAC_analysis.r and scRNA_analysis.r)
 - R v4.0
 - ArchR v1.0.1
 - Seurat v4.0.0
@@ -26,7 +26,7 @@ Variant scoring (SVMpipeline)
 - two annotation data [hg38.fa](https://www.dropbox.com/s/el46t6onl67ejhh/hg38_clean.fa?dl=0) and [hg38.chrom.sizes](https://www.dropbox.com/s/6pf8473bot9wxlv/hg38.chrom.sizes?dl=0)
 
 ## 1. single nucleus ATAC-seq (snATAC) data analysis
-All the scripts for the snATAC data analysis were included in the 1_snATAC_analysis.r
+All the scripts for the snATAC data analysis were included in the 1_scATAC_analysis.r
 
 The snATAC data were generated for this study and pre-processed with 10x cellranger-atac pipeline (v1.2.0, with default parameters). The output files from the cellranger-atac pipeline were used as the input for the script. The script contains following parts.
 - basicQC
