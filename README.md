@@ -1,11 +1,11 @@
-# Scripts for CAD scATAC data analysis
-# "Cell-specific landscape of human coronary artery resolves regulatory mechanisms of disease risk"
-This repo contains all the data analysis scripts in the manuscript "Cell-specific landscape of human coronary artery resolves regulatory mechanisms of disease risk". In the following repo, 1_scATAC_analysis.r includes scripts for the single cell ATAC-seq data analysis, 2_scRNA_analysis.r includes scripts for the single cell RNA-seq data analysis, and 3_SVMpipeline/ and 4_RASQUAL_caQTL/ folders include various scripts for the variant effect predictions and allele-specific based caQTL mapping analyses using scATAC-seq peaks, respectively. See the details in the sections below. 
+# Scripts for CAD snATAC data analysis
+# "Single-nucleus chromatin accessibility profiling highlights regulatory mechanisms of coronary artery disease risk"
+This repo contains all the data analysis scripts in the manuscript "Single-nucleus chromatin accessibility profiling highlights regulatory mechanisms of coronary artery disease risk". In the following repo, 1_snATAC_analysis.r includes scripts for the single nucleus ATAC-seq data analysis, 2_scRNA_analysis.r includes scripts for the single cell RNA-seq data analysis, and 3_SVMpipeline/ and 4_RASQUAL_caQTL/ folders include various scripts for the variant effect predictions and allele-specific based caQTL mapping analyses using snATAC-seq peaks, respectively. See the details in the sections below. 
 
 ## 0. Requirements
 The following environments/packages are required to run the scripts. 
 
-Single cell data analysis (scATAC_analysis.r and scRNA_analysis.r)
+Single cell data analysis (snATAC_analysis.r and scRNA_analysis.r)
 - R v4.0
 - ArchR v1.0.1
 - Seurat v4.0.0
@@ -25,10 +25,10 @@ Variant scoring (SVMpipeline)
 - plotnine v0.7
 - two annotation data [hg38.fa](https://www.dropbox.com/s/el46t6onl67ejhh/hg38_clean.fa?dl=0) and [hg38.chrom.sizes](https://www.dropbox.com/s/6pf8473bot9wxlv/hg38.chrom.sizes?dl=0)
 
-## 1. single cell ATAC-seq (scATAC) data analysis
-All the scripts for the scATAC data analysis were included in the 1_scATAC_analysis.r
+## 1. single nucleus ATAC-seq (snATAC) data analysis
+All the scripts for the snATAC data analysis were included in the 1_snATAC_analysis.r
 
-The scATAC data were generated for this study and pre-processed with 10x cellranger-atac pipeline (v1.2.0, with default parameters). The output files from the cellranger-atac pipeline were used as the input for the script. The script contains following parts.
+The snATAC data were generated for this study and pre-processed with 10x cellranger-atac pipeline (v1.2.0, with default parameters). The output files from the cellranger-atac pipeline were used as the input for the script. The script contains following parts.
 - basicQC
 - cell filtering
 - dimensional reduction
@@ -49,7 +49,7 @@ The scATAC data were generated for this study and pre-processed with 10x cellran
 ## 2. single cell RNA-seq (scRNA) data analysis
 All the scripts for the scRNA data analysis were included in the 2_scRNA_analysis.r. 
 
-The scRNA data were generated in a previous study in the same system as scATAC (Wirka et al., Nat Med. 2019, GSE131778). The main propose for the scRNA data analysis is to generate a scRNA reference database for the integration analysis and label transferring analysis of the scATAC data. The script contains following parts.
+The scRNA data were generated in a previous study in the same system as snATAC (Wirka et al., Nat Med. 2019, GSE131778). The main propose for the scRNA data analysis is to generate a scRNA reference database for the integration analysis and label transferring analysis of the snATAC data. The script contains following parts.
 - cell and gene filtering
 - dimensional reduction 
 - cell clustering
@@ -59,10 +59,10 @@ The scRNA data were generated in a previous study in the same system as scATAC (
 - check knowledge based marker genes versus cell type assignment
 
 
-## 3. Variant effect predictions using ATAC-seq peaks
+## 3. Variant effect predictions using snATAC-seq peaks
 All the scripts for the variant scoring analysis were included in the 3_SVMpipeline/ folder. 
 
-The pipeline and the lsgkm packge were inherited from Corces et al., Nat Genet 2020, Ghandi et al., PLoS Comput Biol 2014, Lee et al., Bioinformatics 2016, and Shrikumar et al., bioinformatics 2019. We acknowledge the helps from Dr. Anshul Kundaje and Soumya Kundu at Standford University
+The pipeline and the lsgkm packge were inherited from Corces et al., Nat Genet 2020, Ghandi et al., PLoS Comput Biol 2014, Lee et al., Bioinformatics 2016, and Shrikumar et al., bioinformatics 2019. We acknowledge help from Dr. Anshul Kundaje and Soumya Kundu at Stanford University.
 
 \#To run the variant scoring analysis. Users could download the folder to any local machine/server. Next, users should download the annotation data for the reference genome ([hg38.fa](https://www.dropbox.com/s/el46t6onl67ejhh/hg38_clean.fa?dl=0) and [hg38.chrom.sizes](https://www.dropbox.com/s/6pf8473bot9wxlv/hg38.chrom.sizes?dl=0)) and put them into the annotation/ folder. Then get in to the folders for each of the 4 steps in order (step0~step3). In each step, run the process.sh file with specific parameters. See the example below
 ```sh
@@ -78,7 +78,7 @@ $ ./process.sh SMC /abspath/yourfolder/forSVMpipeline/ /abspath/yourfolder/forLS
 
 note that the ATAC-seq peaks were located in the celltype_peaks/ folder. Users could change the parameter SMC in the above code to any other cell type listed, or customarize a peak files in the similar format for users' own data and run the pipeline in a similar way. 
 
-## 4. Overlap of coronary artery scATAC peaks with CAD GWAS data, calculation of chromatin accessibility QTLs
+## 4. Overlap of coronary artery snATAC peaks with CAD GWAS data, calculation of chromatin accessibility QTLs
 
 All the scripts for the variant scoring analysis were included in the 4_RASQUAL_caQTL/ folder. 
 
