@@ -243,24 +243,3 @@ fwrite(
 	sep = "\t",
 	quote = F
 )
-
-save(
-	all_DEG_MKG_K10,
-	cdf_PCA_std,
-	data_highVar,
-	data_PCA,
-	data_PCA_ex,
-	data_raw,
-	data_UMAP_K10,
-	data_UMAPtsne_K10,
-	DEGovGSE,
-	MSMCmarker,
-	DSMCmarker,
-	Emarker,
-	genes_expCellNum,
-	GSE_MKG,
-	MKG_K10,
-	own_cluster,
-	proportion_PCA_std,
-	file = file.path(result_dir,"scRNA.rData")
-)
