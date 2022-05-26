@@ -1,213 +1,262 @@
-# scATAC data analysis pipeline, mainly with ArchR, v1.0.1
-library(ArchR) # version 
+# scATAC data analysis pipeline, mainly with ArchR
+# you need to install Seural package 
+pacman::p_load(ArchR,parallel)
 set.seed(1)
+addArchRThreads(threads = 16) 
 addArchRGenome("hg38")
 
-# input data from 10x cellranger-atac output
-inputFiles <- c(
-"scA/fragments.tsv.gz","scB/fragments.tsv.gz","scC/fragments.tsv.gz","scD/fragments.tsv.gz","scE/fragments.tsv.gz","scF/fragments.tsv.gz","scG/fragments.tsv.gz","scH/fragments.tsv.gz","scI/fragments.tsv.gz","scJ/fragments.tsv.gz","scK/fragments.tsv.gz","scL/fragments.tsv.gz","scM/fragments.tsv.gz","scN/fragments.tsv.gz","scO/fragments.tsv.gz","scP/fragments.tsv.gz","scQ/fragments.tsv.gz","scR/fragments.tsv.gz","scS/fragments.tsv.gz","scT/fragments.tsv.gz","scU/fragments.tsv.gz","scV/fragments.tsv.gz","scW/fragments.tsv.gz","scX/fragments.tsv.gz","scY/fragments.tsv.gz","scZ/fragments.tsv.gz","scAA/fragments.tsv.gz","scAB/fragments.tsv.gz","scAC/fragments.tsv.gz","scAD/fragments.tsv.gz","scAE/fragments.tsv.gz","scAF/fragments.tsv.gz","scAG/fragments.tsv.gz","scAH/fragments.tsv.gz","scAI/fragments.tsv.gz","scAJ/fragments.tsv.gz","scAK/fragments.tsv.gz","scAL/fragments.tsv.gz","scAM/fragments.tsv.gz","scAN/fragments.tsv.gz","scAO/fragments.tsv.gz","scAP/fragments.tsv.gz","scAQ/fragments.tsv.gz","scAR/fragments.tsv.gz")
-names(inputFiles)<-c("scA","scB","scC","scD","scE","scF","scG","scH","scI","scJ","scK","scL","scM","scN","scO","scP","scQ","scR","scS","scT","scU","scV","scW","scX","scY","scZ","scAA","scAB","scAC","scAD","scAE","scAF","scAG","scAH","scAI","scAJ","scAK","scAL","scAM","scAN","scAO","scAP","scAQ","scAR")
+result_dir <- "scATAC_analysis_result"
+if(!dir.exists(result_dir)){dir.create(result_dir)}
 
-# create ArchR object
-ArrowFiles <- createArrowFiles(
-  inputFiles = inputFiles,
-  sampleNames = names(inputFiles),
-  filterTSS = 4, #Dont set this too high because you can always increase later
-  filterFrags = 1000, 
-  addTileMat = TRUE,
-  force=FALSE,
-  addGeneScoreMat = TRUE
-)
-projCAD1 <- ArchRProject(
-  ArrowFiles = ArrowFiles, 
-  outputDirectory = "CAD",
-  copyArrows = TRUE #This is recommened so that if you modify the Arrow files you have an original copy for later usage.
-)
+id <- paste0("sc",c("AA","AB","AC","AH","AI"))
+fragment_file <- paste0(id,"/outs/fragments.tsv.gz")
+
+ArrowFiles <-	createArrowFiles(
+					inputFiles = fragment_file,
+					sampleNames = id,
+					minTSS = 4, #Dont set this too high because you can always increase later
+					minFrags = 1000, 
+					addTileMat = TRUE,
+					force = FALSE,
+					addGeneScoreMat = TRUE
+				)
+
+proj_CAD <-	ArchRProject(
+				ArrowFiles = ArrowFiles, 
+				outputDirectory = "CAD",
+				copyArrows = TRUE #This is recommened so that if you modify the Arrow files you have an original copy for later usage.
+			)
 
 # add doublet score
-doubScores <- addDoubletScores(
-  input = ArrowFiles,
-  k = 10, #Refers to how many cells near a "pseudo-doublet" to count.
-  knnMethod = "UMAP", #Refers to the embedding to use for nearest neighbor search.
-  LSIMethod = 1,
-  force=TRUE
-)
+doubScores <-	addDoubletScores(
+					input = ArrowFiles,
+					k = 10, #Refers to how many cells near a "pseudo-doublet" to count.
+					knnMethod = "UMAP", #Refers to the embedding to use for nearest neighbor search.
+					LSIMethod = 1,
+					force=TRUE
+				)
+
+proj_CAD_1 <- proj_CAD
 
 # basic QC 
-proj_CAD_1 <- projCAD1
-p <- ggPoint(
-    x = df[,1], 
-    y = df[,2], 
-    colorDensity = TRUE,
-    continuousSet = "sambaNight",
-    xlabel = "Log10 Unique Fragments",
-    ylabel = "TSS Enrichment",
-    xlim = c(log10(500), quantile(df[,1], probs = 0.99)),
-    ylim = c(0, quantile(df[,2], probs = 0.99))
-) + geom_hline(yintercept = 4, lty = "dashed") + geom_vline(xintercept = 3, lty = "dashed")
-plotPDF(p, name = "TSS-vs-Frags.pdf", ArchRProj = proj_CAD_1, addDOC = FALSE)
+df <- getCellColData(proj_CAD_1, select = c("log10(nFrags)", "TSSEnrichment"))
+p <-	ggPoint(
+			x = df[,1], 
+			y = df[,2], 
+			colorDensity = TRUE,
+			continuousSet = "sambaNight",
+			xlabel = "Log10 Unique Fragments",
+			ylabel = "TSS Enrichment",
+			xlim = c(log10(500), quantile(df[,1], probs = 0.99)),
+			ylim = c(0, quantile(df[,2], probs = 0.99))
+		) +
+		geom_hline(yintercept = 4, lty = "dashed") +
+		geom_vline(xintercept = 3, lty = "dashed")
 
-p1 <- plotGroups(
-    ArchRProj = proj_CAD_1, 
-    groupBy = "Sample", 
-    colorBy = "cellColData", 
-    name = "TSSEnrichment",
-    plotAs = "ridges"
-   )
-p2 <- plotGroups(
-    ArchRProj = proj_CAD_1, 
-    groupBy = "Sample", 
-    colorBy = "cellColData", 
-    name = "TSSEnrichment",
-    plotAs = "violin",
-    alpha = 0.4,
-    addBoxPlot = TRUE
-   )
-p3 <- plotGroups(
-    ArchRProj = proj_CAD_1, 
-    groupBy = "Sample", 
-    colorBy = "cellColData", 
-    name = "log10(nFrags)",
-    plotAs = "ridges"
-   )
-p4 <- plotGroups(
-    ArchRProj = proj_CAD_1, 
-    groupBy = "Sample", 
-    colorBy = "cellColData", 
-    name = "log10(nFrags)",
-    plotAs = "violin",
-    alpha = 0.4,
-    addBoxPlot = TRUE
-   )
-plotPDF(p1,p2,p3,p4, name = "QC-Sample-Statistics.pdf", ArchRProj = proj_CAD_1, addDOC = FALSE, width = 4, height = 4)
+plotPDF(p,name = "1.TSS-vs-Frags.pdf", ArchRProj = proj_CAD_1, addDOC = FALSE)
+
+p1 <-	plotGroups(
+			ArchRProj = proj_CAD_1, 
+			groupBy = "Sample", 
+			colorBy = "cellColData", 
+			name = "TSSEnrichment",
+			plotAs = "ridges"
+		)
+p2 <-	plotGroups(
+			ArchRProj = proj_CAD_1, 
+			groupBy = "Sample", 
+			colorBy = "cellColData", 
+			name = "TSSEnrichment",
+			plotAs = "violin",
+			alpha = 0.4,
+			addBoxPlot = TRUE
+		)
+p3 <-	plotGroups(
+			ArchRProj = proj_CAD_1, 
+			groupBy = "Sample", 
+			colorBy = "cellColData", 
+			name = "log10(nFrags)",
+			plotAs = "ridges"
+		)
+p4 <-	plotGroups(
+			ArchRProj = proj_CAD_1, 
+			groupBy = "Sample", 
+			colorBy = "cellColData", 
+			name = "log10(nFrags)",
+			plotAs = "violin",
+			alpha = 0.4,
+			addBoxPlot = TRUE
+		)
+plotPDF(p1,p2,p3,p4, name = "2.QC-Sample-Statistics.pdf", ArchRProj = proj_CAD_1, addDOC = FALSE, width = 4, height = 4)
 
 p1 <- plotFragmentSizes(ArchRProj = proj_CAD_1)
 p2 <- plotTSSEnrichment(ArchRProj = proj_CAD_1)
-plotPDF(p1,p2, name = "QC-Sample-FragSizes-TSSProfile.pdf", ArchRProj = proj_CAD_1, addDOC = FALSE, width = 5, height = 5)
-
-p <- ggPoint(
-    x = df2[,"log10(nFrags)"], 
-    y = df2[,"TSSEnrichment"], 
-    colorDensity = TRUE,
-    continuousSet = "sambaNight",
-    xlabel = "Log10 Unique Fragments",
-    ylabel = "TSS Enrichment",
-    xlim = c(3, quantile(df2[,"log10(nFrags)"], probs = 0.99)),
-    ylim = c(4, quantile(df2[,"TSSEnrichment"], probs = 0.99))
-) + geom_hline(yintercept = 7, lty = "dashed") + geom_vline(xintercept = 4, lty = "dashed")
-plotPDF(p, name = "TSS-vs-Frags_cutoff.pdf", ArchRProj = proj_CAD_2, addDOC = FALSE)
-
+plotPDF(p1,p2, name = "3.QC-Sample-FragSizes-TSSProfile.pdf", ArchRProj = proj_CAD_1, addDOC = FALSE, width = 5, height = 5)
 
 # filter cells
-idxPass <- which(proj_CAD_2$TSSEnrichment >= 7 & proj_CAD_2$nFrags >= 10000)
-proj_CAD_2 <- filterDoublets(proj_CAD_1,filterRatio=1.5)
+proj_CAD_2 <- filterDoublets(proj_CAD,filterRatio=1.5)
 df2 <- getCellColData(proj_CAD_2,select = c("log10(nFrags)", "TSSEnrichment"))
+idxPass <- which(proj_CAD_2$TSSEnrichment >= 7 & proj_CAD_2$nFrags >= 10000)
 cellsPass <- proj_CAD_2$cellNames[idxPass]
 proj_CAD_2 <- proj_CAD_2[cellsPass, ]
 
+p <-	ggPoint(
+			x = df2[,"log10(nFrags)"], 
+			y = df2[,"TSSEnrichment"], 
+			colorDensity = TRUE,
+			continuousSet = "sambaNight",
+			xlabel = "Log10 Unique Fragments",
+			ylabel = "TSS Enrichment",
+			xlim = c(3, quantile(df2[,"log10(nFrags)"], probs = 0.99)),
+			ylim = c(4, quantile(df2[,"TSSEnrichment"], probs = 0.99))
+		) +
+		geom_hline(yintercept = 7, lty = "dashed") +
+		geom_vline(xintercept = 4, lty = "dashed")
+plotPDF(p,name = "4.TSS-vs-Frags_cutoff.pdf", ArchRProj = proj_CAD_2, addDOC = FALSE)
+
 # dimensional reduction
-proj_CAD_2 <- addIterativeLSI(
-    ArchRProj = proj_CAD_2,
-    useMatrix = "TileMatrix", 
-    name = "IterativeLSI", 
-    iterations = 2, 
-    clusterParams = list( #See Seurat::FindClusters
-        resolution = c(0.2), 
-        sampleCells = 10000, 
-        n.start = 10
-    ), 
-    varFeatures = 25000, 
-    dimsToUse = 1:30,
-    seed=1,force=T
-)
 
-# basic clustering 
-proj_CAD_2 <- addClusters(
-    input = proj_CAD_2,
-    reducedDims = "IterativeLSI",
-    method = "Seurat",
-    name = "Clusters",
-    resolution = 0.8,
-    force=T,seed=1
-)
+proj_CAD_2 <-	proj_CAD_2 |>
+				addIterativeLSI(
+					useMatrix = "TileMatrix", 
+					name = "IterativeLSI", 
+					iterations = 2, 
+					clusterParams =	list(
+										resolution = c(0.2), 
+										sampleCells = 10000, 
+										n.start = 10
+									), 
+					varFeatures = 25000, 
+					dimsToUse = 1:30,
+					seed=1,force=T
+				) |>
+				addClusters(
+					reducedDims = "IterativeLSI",
+					method = "Seurat",
+					name = "Clusters",
+					resolution = 0.8,
+					force = T,
+					seed = 1
+				) |>
+				addUMAP(
+					reducedDims = "IterativeLSI", 
+					name = "UMAP", 
+					nNeighbors = 30, 
+					minDist = 0.5, 
+					metric = "cosine",
+					force = T
+				) |>
+				addHarmony(
+					reducedDims = "IterativeLSI",
+					name = "Harmony",
+					groupBy = "Sample",
+					force=T
+				)
 
+proj_CAD_2_HAR <-	addClusters(
+						input = proj_CAD_2,
+						reducedDims = "Harmony",
+						method = "Seurat",
+						name = "Clusters",
+						resolution = 0.8,
+						force = T,
+						seed = 1
+					)
 
-# UMAP embedding
-proj_CAD_2 <- addUMAP(
-    ArchRProj = proj_CAD_2, 
-    reducedDims = "IterativeLSI", 
-    name = "UMAP", 
-    nNeighbors = 30, 
-    minDist = 0.5, 
-    metric = "cosine",force=T
-)
-
-p1 <- plotEmbedding(ArchRProj = proj_CAD_2, colorBy = "cellColData", name = "Sample", embedding = "UMAP")
-p2 <- plotEmbedding(ArchRProj = proj_CAD_2, colorBy = "cellColData", name = "Clusters", embedding = "UMAP")
-plotPDF(p1,p2, name = "Plot-UMAP-Sample-Clusters_LSI.pdf", ArchRProj = proj_CAD_2, addDOC = FALSE, width = 5, height = 5)
+multi_pe_plot <- function(names,proj,file_name)
+{
+	lapply(
+		names,
+		function(x)
+		{
+			plotEmbedding(
+				ArchRProj = proj,
+				colorBy = "cellColData",
+				name = x,
+				embedding = "UMAP"
+			)
+		}
+	)|>
+	plotPDF(
+		name = file_name,
+		ArchRProj = proj,
+		addDOC = FALSE,
+		width = 5,
+		height = 5
+	)
+}
 
 # QC score projected on UMAP
-p1 <- plotEmbedding(ArchRProj = proj_CAD_2, colorBy = "cellColData", name = "DoubletEnrichment", embedding = "UMAP")
-p2 <- plotEmbedding(ArchRProj = proj_CAD_2, colorBy = "cellColData", name = "DoubletScore", embedding = "UMAP")
-p3 <- plotEmbedding(ArchRProj = proj_CAD_2, colorBy = "cellColData", name = "PromoterRatio", embedding = "UMAP")
-p4 <- plotEmbedding(ArchRProj = proj_CAD_2, colorBy = "cellColData", name = "NucleosomeRatio", embedding = "UMAP")
-p5 <- plotEmbedding(ArchRProj = proj_CAD_2, colorBy = "cellColData", name = "TSSEnrichment", embedding = "UMAP")
-p6 <- plotEmbedding(ArchRProj = proj_CAD_2, colorBy = "cellColData", name = "nFrags", embedding = "UMAP")
-plotPDF(p1,p2,p3,p4,p5,p6, name = "Plot-UMAP-Sample-QC_LSI.pdf", ArchRProj = proj_CAD_2, addDOC = FALSE, width = 5, height = 5)
-
-
-# check batcheffect
-proj_CAD_2 <- addHarmony(
-    ArchRProj = proj_CAD_2,
-    reducedDims = "IterativeLSI",
-    name = "Harmony",
-    groupBy = "Sample",force=T
-)
-proj_CAD_2_HAR <- addClusters(
-    input = proj_CAD_2,
-    reducedDims = "Harmony",
-    method = "Seurat",
-    name = "Clusters",
-    resolution = 0.8,
-    force=T,seed=1
+multi_pe_plot(
+	c(
+		"Sample",
+		"Clusters",
+		"DoubletEnrichment",
+		"DoubletScore",
+		"PromoterRatio",
+		"NucleosomeRatio",
+		"TSSEnrichment",
+		"nFrags"
+	),
+	proj_CAD_2,
+	"5.Plot-UMAP-Sample_LSI.pdf"
 )
 
-cM <- confusionMatrix(paste0(proj_CAD_2$Clusters), paste0(proj_CAD_2$Sample))
-cM <- cM / Matrix::rowSums(cM)
-p <- pheatmap::pheatmap(
-    mat = as.matrix(cM), 
-    color = paletteContinuous("whiteBlue"), 
-    border_color = "black"
+
+confusionmap <-	function(
+					proj,
+					file_name,
+					addDOC = FALSE,
+					width = NA,
+					height = NA
+){
+	cM <-	confusionMatrix(
+				paste0(proj$Clusters),
+				paste0(proj$Sample)
+			)
+	cM <- cM / Matrix::rowSums(cM)
+	pheatmap::pheatmap(
+		mat = as.matrix(cM), 
+		color = paletteContinuous("whiteBlue"), 
+		border_color = "black"
+	) |>
+	plotPDF(
+		name = file_name,
+		ArchRProj = proj,
+		addDOC = addDOC
+	)
+}
+
+confusionmap(proj_CAD_2,"6.confusionMap_heatmap_LSI.pdf")
+confusionmap(proj_CAD_2_HAR,"7.confusionMap_heatmap_HAR.pdf")
+
+multi_pe_plot(
+	c(
+		"Sample",
+		"Clusters",
+		"DoubletEnrichment",
+		"DoubletScore",
+		"PromoterRatio",
+		"NucleosomeRatio",
+		"TSSEnrichment",
+		"nFrags"
+	),
+	proj_CAD_2_HAR,
+	"8.Plot-UMAP-Sample_HAR.pdf"
 )
-plotPDF(p, name = "confusionMap_heatmap_LSI.pdf", ArchRProj = proj_CAD_2, addDOC = FALSE)
 
-cM <- confusionMatrix(paste0(proj_CAD_2_HAR$Clusters), paste0(proj_CAD_2_HAR$Sample))
-cM <- cM / Matrix::rowSums(cM)
-p2 <- pheatmap::pheatmap(
-    mat = as.matrix(cM), 
-    color = paletteContinuous("whiteBlue"), 
-    border_color = "black"
-)
-
-plotPDF(p, name = "confusionMap_heatmap_LSI.pdf", ArchRProj = proj_CAD_2, addDOC = FALSE)
-plotPDF(p2, name = "confusionMap_heatmap_HAR.pdf", ArchRProj = proj_CAD_2, addDOC = FALSE)
-
-p1 <- plotEmbedding(ArchRProj = proj_CAD_2_HAR, colorBy = "cellColData", name = "Sample", embedding = "UMAP")
-p2 <- plotEmbedding(ArchRProj = proj_CAD_2_HAR, colorBy = "cellColData", name = "Clusters", embedding = "UMAP")
-plotPDF(p1,p2, name = "Plot-UMAP-Sample-Clusters_HAR.pdf", ArchRProj = proj_CAD_2, addDOC = FALSE, width = 5, height = 5)
+proj_CAD_2 <-	proj_CAD_2 |>
+				addGeneScoreMatrix(force = TRUE) |>
+				addImputeWeights(seed = 1)
 
 
-# gene score with ArchR default method
-proj_CAD_2<-addGeneScoreMatrix(proj_CAD_2,force=TRUE)
-proj_CAD_2 <- addImputeWeights(proj_CAD_2,seed=1)
-
-markersGS <- getMarkerFeatures(
-    ArchRProj = proj_CAD_2, 
-    useMatrix = "GeneScoreMatrix", 
-    groupBy = "Clusters",
-    bias = c("TSSEnrichment", "log10(nFrags)"),
-    testMethod = "wilcoxon"
-)
+markersGS <-	getMarkerFeatures(
+					ArchRProj = proj_CAD_2, 
+					useMatrix = "GeneScoreMatrix", 
+					groupBy = "Clusters",
+					bias = c("TSSEnrichment", "log10(nFrags)"),
+					testMethod = "wilcoxon"
+				)
 
 # cluster specific genes
 markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & Log2FC >= 1")
@@ -225,10 +274,9 @@ driverSMC <- c("LGALS3","FN1","TNFRSF11B","COL1A1","COL4A1","COL4A2","COL6A3")
 useMKG <- intersect(c(DSMCmarker,MSMCmarker,Emarker,Tmarker,Macrophage,PericyteMarker,Osteochondrogenic,PotentialSMC,driverSMC), uniq_symbol)
 markerGenes <- useMKG#c(DSMCmarker,MSMCmarker,Emarker,Tmarker)
 
-
 # integration with scRNAseq data
-seRNA <- readRDS("scRNA_PC10.rds");
-celltype_meta <- read.table("PC10_celltype_assignment.txt",row.names=1,header=T)
+seRNA <- readRDS("scRNA_analysis_result/scRNA_PC10.rds");
+celltype_meta <- fread("scRNA_analysis_result/PC10_celltype_assignment.txt")
 
 CT1 <- as.vector(celltype_meta[,"celltype"])
 CT1[which(celltype_meta[,"celltype"]=="T/NK")] <- "T_NK"
@@ -238,28 +286,28 @@ seRNA$celltype <- as.factor(seRNA$celltype)
 
 pal_RNAcelltype <- paletteDiscrete(values = seRNA$celltype)
 pal_RNAcelltype[c("Fibroblast","Endothelial","Macrophage","Fibro","T_NK","SMC","Pericyte1","unknown1",
-                  "Pericyte2","B","Plasma","unknown2","Neuron","unknown3","Mast")] <- rainbow(15)
+				  "Pericyte2","B","Plasma","unknown2","Neuron","unknown3","Mast")] <- rainbow(15)
 p1 <- plotEmbedding(
-    proj_CAD_2, 
-    colorBy = "cellColData", 
-    name = "predictedGroup_Un", 
-    pal = pal_RNAcelltype
+	proj_CAD_2, 
+	colorBy = "cellColData", 
+	name = "predictedGroup_Un", 
+	pal = pal_RNAcelltype
 )
 plotPDF(p1, name = "UMAP_RNAIntegration_final.pdf", ArchRProj = proj_CAD_2, addDOC = FALSE, width = 5, height = 5)
 
 proj_CAD_3 <- addGeneIntegrationMatrix(
-    ArchRProj = proj_CAD_2, 
-    useMatrix = "GeneScoreMatrix",
-    matrixName = "GeneIntegrationMatrix",
-    reducedDims = "Harmony",
-    seRNA = seRNA,
-    addToArrow = TRUE,
-    force= TRUE,
-    #groupList = groupList,
-    groupRNA = "celltype",
-    nameCell = "predictedCell_Un",
-    nameGroup = "predictedGroup_Un",
-    nameScore = "predictedScore_Un"
+	ArchRProj = proj_CAD_2, 
+	useMatrix = "GeneScoreMatrix",
+	matrixName = "GeneIntegrationMatrix",
+	reducedDims = "Harmony",
+	seRNA = seRNA,
+	addToArrow = TRUE,
+	force= TRUE,
+	#groupList = groupList,
+	groupRNA = "celltype",
+	nameCell = "predictedCell_Un",
+	nameGroup = "predictedGroup_Un",
+	nameScore = "predictedScore_Un"
 )
 
 # RNA label transfering based celltype assignment
@@ -299,17 +347,17 @@ pathToMacs2 <- findMacs2()
 proj_CAD_4 <- addGroupCoverages(ArchRProj = proj_CAD_3, groupBy = "Clusters3")
 
 proj_CAD_4 <- addReproduciblePeakSet(
-    ArchRProj = proj_CAD_4, 
-    groupBy = "Clusters3", 
-    pathToMacs2 = pathToMacs2,
-    extsize=100,
-    cutOff=0.01,
-    shift=0,
-    extendSummits=200,
-    promoterRegion=c(2000,2000),
-    genomeSize=3e9,
-    reproducibility = "(n+1)/2",
-    threads = getArchRThreads()
+	ArchRProj = proj_CAD_4, 
+	groupBy = "Clusters3", 
+	pathToMacs2 = pathToMacs2,
+	extsize=100,
+	cutOff=0.01,
+	shift=0,
+	extendSummits=200,
+	promoterRegion=c(2000,2000),
+	genomeSize=3e9,
+	reproducibility = "(n+1)/2",
+	threads = getArchRThreads()
 )
 proj_CAD_4 <- addPeakMatrix(proj_CAD_4)
 allpeaks <- getPeakSet(proj_CAD_4)
@@ -318,18 +366,18 @@ proj_CAD_4 <- addImputeWeights(proj_CAD_4,seed=1)
 
 # celltype specific genes (for manuscript)
 markersGS <- getMarkerFeatures(
-    ArchRProj = proj_CAD_4, 
-    useMatrix = "GeneScoreMatrix", 
-    groupBy = "Clusters3",
-    bias = c("TSSEnrichment", "log10(nFrags)"),
-    testMethod = "wilcoxon"
+	ArchRProj = proj_CAD_4, 
+	useMatrix = "GeneScoreMatrix", 
+	groupBy = "Clusters3",
+	bias = c("TSSEnrichment", "log10(nFrags)"),
+	testMethod = "wilcoxon"
 )
 markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & Log2FC >= 1")
 printMKG <- function(MKGdata){
   outdata <- matrix(rep(0,nrow(MKGdata)*ncol(MKGdata)),nrow=nrow(MKGdata))
   colnames(outdata) <- colnames(MKGdata)
   for(i in 1:ncol(outdata)){
-    outdata[,i] <- as.vector(MKGdata[,i])
+	outdata[,i] <- as.vector(MKGdata[,i])
   }
   return(outdata)
 }
@@ -350,9 +398,9 @@ plotPDF(p1, name = "markerGene_celltype_GSheatmap_final.pdf", ArchRProj = proj_C
 # celltype specific peaks (for manuscript)
 dir.create("markerPeak_celltype_final")
 markersPeaks <- getMarkerFeatures(
-    ArchRProj = proj_CAD_4, 
-    useMatrix = "PeakMatrix", 
-    groupBy = "Clusters3",
+	ArchRProj = proj_CAD_4, 
+	useMatrix = "PeakMatrix", 
+	groupBy = "Clusters3",
   bias = c("TSSEnrichment", "log10(nFrags)"),
   testMethod = "wilcoxon"
 )
@@ -360,13 +408,13 @@ saveRDS(markersPeaks, file="markerPeak_celltype_final/markerPeak_celltype_final.
 markerList <- getMarkers(markersPeaks, cutOff = "FDR <= 0.01 & Log2FC >= 1", returnGR = TRUE)
 
 output_diffpeak <- function(this_data,cellname){
-    out_data <- cbind(as.vector(this_data@seqnames),
-                      this_data@ranges@start,
-                      this_data@ranges@start + this_data@ranges@width,
-                      paste0(cellname,"_",seq(length(this_data@seqnames))),
-                      this_data$Log2FC,
-                      this_data$FDR)
-    write.table(out_data,file=paste0("markerPeak_celltype_final/",cellname,"_markerPeak.bed"),quote=F,row.names=F,col.names=F,sep="\t")
+	out_data <- cbind(as.vector(this_data@seqnames),
+					  this_data@ranges@start,
+					  this_data@ranges@start + this_data@ranges@width,
+					  paste0(cellname,"_",seq(length(this_data@seqnames))),
+					  this_data$Log2FC,
+					  this_data$FDR)
+	write.table(out_data,file=paste0("markerPeak_celltype_final/",cellname,"_markerPeak.bed"),quote=F,row.names=F,col.names=F,sep="\t")
 }
 output_diffpeak(markerList$Endothelial,"Endothelial")
 output_diffpeak(markerList$Fibroblast,"Fibroblast")
@@ -395,10 +443,10 @@ plotPDF(pma, pv, name = paste0("markerPeak_scatterMaVolcano_",celltype,"_final.p
 # motif annotation
 proj_CAD_5 <- addMotifAnnotations(ArchRProj = proj_CAD_4, motifSet = "homer", name = "Motif",force = TRUE)
 enrichMotifs <- peakAnnoEnrichment(
-    seMarker = markersPeaks,
-    ArchRProj = proj_CAD_5,
-    peakAnnotation = "Motif",
-    cutOff = "FDR <= 0.1 & Log2FC >= 0.5"
+	seMarker = markersPeaks,
+	ArchRProj = proj_CAD_5,
+	peakAnnotation = "Motif",
+	cutOff = "FDR <= 0.1 & Log2FC >= 0.5"
   )
 
 heatmapEM <- plotEnrichHeatmap(enrichMotifs, n = 7, transpose = TRUE)
@@ -434,22 +482,22 @@ p <- plotGroups(ArchRProj = proj_CAD_6,
 
 p2 <- lapply(seq_along(p), function(x){
   if(x != 1){
-    p[[x]] + guides(color = FALSE, fill = FALSE) + 
-    theme_ArchR(baseSize = 6) +
-    theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
-    theme(
-        axis.text.y=element_blank(), 
-        axis.ticks.y=element_blank(),
-        axis.title.y=element_blank()
-    ) + ylab("")
+	p[[x]] + guides(color = FALSE, fill = FALSE) + 
+	theme_ArchR(baseSize = 6) +
+	theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
+	theme(
+		axis.text.y=element_blank(), 
+		axis.ticks.y=element_blank(),
+		axis.title.y=element_blank()
+	) + ylab("")
   }else{
-    p[[x]] + guides(color = FALSE, fill = FALSE) + 
-    theme_ArchR(baseSize = 6) +
-    theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
-    theme(
-        axis.ticks.y=element_blank(),
-        axis.title.y=element_blank()
-    ) + ylab("")
+	p[[x]] + guides(color = FALSE, fill = FALSE) + 
+	theme_ArchR(baseSize = 6) +
+	theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
+	theme(
+		axis.ticks.y=element_blank(),
+		axis.title.y=element_blank()
+	) + ylab("")
   }
 })
 do.call(cowplot::plot_grid, c(list(nrow = 1, rel_widths = c(2, rep(1, length(p2) - 1))),p2))
@@ -457,23 +505,23 @@ do.call(cowplot::plot_grid, c(list(nrow = 1, rel_widths = c(2, rep(1, length(p2)
 plotPDF(p, name = "chromVAR_GroupsDeviationsImputation_final.pdf", width = 5, height = 5, ArchRProj = proj_CAD_6, addDOC = FALSE)
 
 p <- plotEmbedding(
-    ArchRProj = proj_CAD_6, 
-    colorBy = "MotifMatrix", 
-    name = sort(markerMotifs), 
-    embedding = "UMAP",
-    imputeWeights = getImputeWeights(proj_CAD_6)
+	ArchRProj = proj_CAD_6, 
+	colorBy = "MotifMatrix", 
+	name = sort(markerMotifs), 
+	embedding = "UMAP",
+	imputeWeights = getImputeWeights(proj_CAD_6)
 )
 
 p2 <- lapply(p, function(x){
-    x + guides(color = FALSE, fill = FALSE) + 
-    theme_ArchR(baseSize = 6.5) +
-    theme(plot.margin = unit(c(0, 0, 0, 0), "cm")) +
-    theme(
-        axis.text.x=element_blank(), 
-        axis.ticks.x=element_blank(), 
-        axis.text.y=element_blank(), 
-        axis.ticks.y=element_blank()
-    )
+	x + guides(color = FALSE, fill = FALSE) + 
+	theme_ArchR(baseSize = 6.5) +
+	theme(plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+	theme(
+		axis.text.x=element_blank(), 
+		axis.ticks.x=element_blank(), 
+		axis.text.y=element_blank(), 
+		axis.ticks.y=element_blank()
+	)
 })
 useP <- do.call(cowplot::plot_grid, c(list(ncol = 3),p2))
 plotPDF(useP, name = "chromVAR_UMAP_DeviationsImputation_final.pdf", width = 5, height = 5, ArchRProj = proj_CAD_6, addDOC = FALSE)
@@ -482,12 +530,12 @@ plotPDF(useP, name = "chromVAR_UMAP_DeviationsImputation_final.pdf", width = 5, 
 # trajectory
 trajectory <- c("Endothelial", "SMC", "Fibroblast")
 proj_CAD_7 <- addTrajectory(
-    ArchRProj = proj_CAD_6, 
-    name = "Trajectory", 
-    groupBy = "Clusters3",
-    trajectory = trajectory, 
-    embedding = "UMAP", 
-    force = TRUE
+	ArchRProj = proj_CAD_6, 
+	name = "Trajectory", 
+	groupBy = "Clusters3",
+	trajectory = trajectory, 
+	embedding = "UMAP", 
+	force = TRUE
 )
 p <- plotTrajectory(proj_CAD_7, trajectory = "Trajectory", colorBy = "cellColData", name = "Trajectory")
 plotPDF(p, name = "Trajectory_celltypeESF_UMAP_final.pdf", width = 5, height = 5, ArchRProj = proj_CAD_7, addDOC = FALSE)
@@ -505,46 +553,46 @@ plotPDF(p1, p2, p3, name = "Trajectory_celltypeESF_Heatmaps_final.pdf", ArchRPro
 
 # coAccessibility/cicero
 proj_CAD_8 <- addCoAccessibility(
-    ArchRProj = proj_CAD_7,
-    reducedDims = "IterativeLSI"
+	ArchRProj = proj_CAD_7,
+	reducedDims = "IterativeLSI"
 )
 cA <- getCoAccessibility(
-    ArchRProj = proj_CAD_8,
-    corCutOff = 0.5,
-    resolution = 10000,
-    returnLoops = TRUE
+	ArchRProj = proj_CAD_8,
+	corCutOff = 0.5,
+	resolution = 10000,
+	returnLoops = TRUE
 )
 proj_CAD_8 <- addPeak2GeneLinks(
-    ArchRProj = proj_CAD_8,
-    reducedDims = "IterativeLSI"
+	ArchRProj = proj_CAD_8,
+	reducedDims = "IterativeLSI"
 )
 p2g <- getPeak2GeneLinks(
-    ArchRProj = proj_CAD_8,
-    corCutOff = 0.45,
-    resolution = 10000,
-    returnLoops = TRUE
+	ArchRProj = proj_CAD_8,
+	corCutOff = 0.45,
+	resolution = 10000,
+	returnLoops = TRUE
 )
 
 # check the loop calling with examples
 useregion <- GRanges(seqnames = "chr3", strand = c("+"),
-              ranges = IRanges(start = c(138313800), width = 100000))
+			  ranges = IRanges(start = c(138313800), width = 100000))
 p1 <- plotBrowserTrack(
-    ArchRProj = proj_CAD_8, 
-    groupBy = "Clusters3", 
-    region=useregion,
-    upstream = 0,
-    downstream = 0,
-    loops = cA,
-    plotSummary=c("geneTrack","loopTrack","bulkTrack"),size=c(4,4,10)
+	ArchRProj = proj_CAD_8, 
+	groupBy = "Clusters3", 
+	region=useregion,
+	upstream = 0,
+	downstream = 0,
+	loops = cA,
+	plotSummary=c("geneTrack","loopTrack","bulkTrack"),size=c(4,4,10)
 )
 p2 <- plotBrowserTrack(
-    ArchRProj = proj_CAD_8, 
-    groupBy = "Clusters3", 
-    region=useregion,
-    upstream = 0,
-    downstream = 0,
-    loops = p2g,
-    plotSummary=c("geneTrack","loopTrack","bulkTrack"),size=c(4,4,10)
+	ArchRProj = proj_CAD_8, 
+	groupBy = "Clusters3", 
+	region=useregion,
+	upstream = 0,
+	downstream = 0,
+	loops = p2g,
+	plotSummary=c("geneTrack","loopTrack","bulkTrack"),size=c(4,4,10)
 )
 plotPDF(p1, name = "region1_coA_IGV.pdf", ArchRProj = proj_CAD_8, addDOC = FALSE, width = 6, height = 6)
 plotPDF(p2, name = "region1_p2g_IGV.pdf", ArchRProj = proj_CAD_8, addDOC = FALSE, width = 6, height = 6)
@@ -636,47 +684,47 @@ imputGSmat2 <- log10(as.matrix(imputGSmat) + 0.01)
 RImat2 <- log10(as.matrix(RImat)+0.001)
 
 GSmat_box <- function(Gname){
-    pdf(file=paste0("MKG_GS_boxplot/",Gname,".pdf"),width=12,height=12)
-    par(mfcol=c(2,2),mar=c(10,4,2,2))
-    boxplot(GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Endothelial")] ],
-            GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "SMC")] ],
-            GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Fibroblast")] ],
-            GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Pericyte")] ],
-            GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Macrophage")] ],
-            GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Mast")] ],
-            GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Plasma")] ],
-            GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "T")] ],
-            names=c("Endothelial","SMC","Fibroblast","Pericyte","Macrophage","Mast","Plasma","T"),
-            col=c("#D51F26","#899ED1","#272E6A","#F47D2C","#1A7738","#89288E","#FFE503","#C06DAC"),
-            ylab="geneScore",main=Gname,las=2,cex.axis=2)
-    
-    boxplot(imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Endothelial")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "SMC")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Fibroblast")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Pericyte")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Macrophage")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Mast")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Plasma")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "T")] ],
-            names=c("Endothelial","SMC","Fibroblast","Pericyte","Macrophage","Mast","Plasma","T"),
-            col=c("#D51F26","#899ED1","#272E6A","#F47D2C","#1A7738","#89288E","#FFE503","#C06DAC"),
-            ylab="imputted geneScore",main=Gname,las=2,cex.axis=2)
-    
-    boxplot(GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C4")] ],
-            GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C5")] ],
-            GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C6")] ],
-            GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C7")] ],
-            names=c("C4","C5","C6","C7"),cex.axis=2,
-            ylab="geneScore",main=Gname,las=2)
-    
-    boxplot(imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C4")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C5")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C6")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C7")] ],
-            names=c("C4","C5","C6","C7"),cex.axis=2,
-            ylab="imputted geneScore",main=Gname,las=2)
-    
-    dev.off()
+	pdf(file=paste0("MKG_GS_boxplot/",Gname,".pdf"),width=12,height=12)
+	par(mfcol=c(2,2),mar=c(10,4,2,2))
+	boxplot(GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Endothelial")] ],
+			GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "SMC")] ],
+			GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Fibroblast")] ],
+			GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Pericyte")] ],
+			GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Macrophage")] ],
+			GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Mast")] ],
+			GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Plasma")] ],
+			GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "T")] ],
+			names=c("Endothelial","SMC","Fibroblast","Pericyte","Macrophage","Mast","Plasma","T"),
+			col=c("#D51F26","#899ED1","#272E6A","#F47D2C","#1A7738","#89288E","#FFE503","#C06DAC"),
+			ylab="geneScore",main=Gname,las=2,cex.axis=2)
+	
+	boxplot(imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Endothelial")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "SMC")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Fibroblast")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Pericyte")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Macrophage")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Mast")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "Plasma")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters3 == "T")] ],
+			names=c("Endothelial","SMC","Fibroblast","Pericyte","Macrophage","Mast","Plasma","T"),
+			col=c("#D51F26","#899ED1","#272E6A","#F47D2C","#1A7738","#89288E","#FFE503","#C06DAC"),
+			ylab="imputted geneScore",main=Gname,las=2,cex.axis=2)
+	
+	boxplot(GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C4")] ],
+			GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C5")] ],
+			GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C6")] ],
+			GSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C7")] ],
+			names=c("C4","C5","C6","C7"),cex.axis=2,
+			ylab="geneScore",main=Gname,las=2)
+	
+	boxplot(imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C4")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C5")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C6")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C7")] ],
+			names=c("C4","C5","C6","C7"),cex.axis=2,
+			ylab="imputted geneScore",main=Gname,las=2)
+	
+	dev.off()
 }
 GSmat_box("TCF21")
 GSmat_box("MYOCD")
@@ -686,14 +734,14 @@ GSmat_box("ATF3")
 GSmat_box("KLF4")
 
 iGSmat_box <- function(Gname){
-    pdf(file=paste0("MKG_GS_boxplot/",Gname,"_imputedGS_SMC4clusters.pdf"))
-    boxplot(imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C4")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C5")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C6")] ],
-            imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C7")] ],
-            names=c("C4","C5","C6","C7"),cex.axis=2,col=c("#9A4364","#E96E50","#EBB422","#98A5D5"),
-            ylab="imputted geneScore",main=Gname,las=2)
-    dev.off()
+	pdf(file=paste0("MKG_GS_boxplot/",Gname,"_imputedGS_SMC4clusters.pdf"))
+	boxplot(imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C4")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C5")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C6")] ],
+			imputGSmat[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C7")] ],
+			names=c("C4","C5","C6","C7"),cex.axis=2,col=c("#9A4364","#E96E50","#EBB422","#98A5D5"),
+			ylab="imputted geneScore",main=Gname,las=2)
+	dev.off()
 }
 iGSmat_box("TCF21")
 iGSmat_box("MYOCD")
@@ -704,14 +752,14 @@ iGSmat_box("FN1")
 iGSmat_box("CNN1")
 
 RImat_box <- function(Gname){
-    pdf(file=paste0("MKG_GS_boxplot/",Gname,"_RNAintegration_SMC4clusters.pdf"))
-    boxplot(RImat2[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C4")] ],
-            RImat2[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C5")] ],
-            RImat2[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C6")] ],
-            RImat2[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C7")] ],
-            names=c("C4","C5","C6","C7"),cex.axis=2,col=c("#9A4364","#E96E50","#EBB422","#98A5D5"),
-            ylab="log10 RIscore",main=Gname,las=2)
-    dev.off()
+	pdf(file=paste0("MKG_GS_boxplot/",Gname,"_RNAintegration_SMC4clusters.pdf"))
+	boxplot(RImat2[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C4")] ],
+			RImat2[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C5")] ],
+			RImat2[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C6")] ],
+			RImat2[Gname, proj_CAD_8$cellNames[which(proj_CAD_8$Clusters == "C7")] ],
+			names=c("C4","C5","C6","C7"),cex.axis=2,col=c("#9A4364","#E96E50","#EBB422","#98A5D5"),
+			ylab="log10 RIscore",main=Gname,las=2)
+	dev.off()
 }
 RImat_box("TCF21")
 RImat_box("MYOCD")
@@ -789,28 +837,28 @@ p1 <- plotEmbedding(proj_CAD_8, colorBy = "cellColData", name = "predictedGroup_
 plotPDF(p1, name = "test.pdf", ArchRProj = proj_CAD_8, addDOC = FALSE, width = 6, height = 6)
 proj_CAD_8$ClustersRNA <- proj_CAD_8@cellColData[,"predictedGroup_Un"]
 markersGS_FIBROvSMC <- getMarkerFeatures(
-    ArchRProj = proj_CAD_8, 
-    useMatrix = "GeneScoreMatrix", 
-    groupBy = "predictedGroup_Un",
-    useGroups = "Fibro",
-    bgdGroups = "SMC",
-    bias = c("TSSEnrichment", "log10(nFrags)"),
-    testMethod = "wilcoxon"
+	ArchRProj = proj_CAD_8, 
+	useMatrix = "GeneScoreMatrix", 
+	groupBy = "predictedGroup_Un",
+	useGroups = "Fibro",
+	bgdGroups = "SMC",
+	bias = c("TSSEnrichment", "log10(nFrags)"),
+	testMethod = "wilcoxon"
 )
 markersPeaks_FIBROvSMC <- getMarkerFeatures(
-    ArchRProj = proj_CAD_8, 
-    useMatrix = "PeakMatrix", 
-    groupBy = "predictedGroup_Un",
-    useGroups = "Fibro",
-    bgdGroups = "SMC",
-    bias = c("TSSEnrichment", "log10(nFrags)"),
-    testMethod = "wilcoxon"
+	ArchRProj = proj_CAD_8, 
+	useMatrix = "PeakMatrix", 
+	groupBy = "predictedGroup_Un",
+	useGroups = "Fibro",
+	bgdGroups = "SMC",
+	bias = c("TSSEnrichment", "log10(nFrags)"),
+	testMethod = "wilcoxon"
 )
 enrichMotifs_FIBROvSMC <- peakAnnoEnrichment(
-    seMarker = markersPeaks_FIBROvSMC,
-    ArchRProj = proj_CAD_8,
-    peakAnnotation = "Motif",
-    cutOff = "FDR <= 0.01 & Log2FC >= 1"
+	seMarker = markersPeaks_FIBROvSMC,
+	ArchRProj = proj_CAD_8,
+	peakAnnotation = "Motif",
+	cutOff = "FDR <= 0.01 & Log2FC >= 1"
   )
 
 markerListGene_FIBROvSMC <- getMarkers(markersGS_FIBROvSMC, cutOff = "FDR <= 0.1 & Log2FC >= 1")
@@ -818,11 +866,11 @@ markerListPeak_FIBROvSMC <- getMarkers(markersPeaks_FIBROvSMC, cutOff = "FDR <= 
 
 this_data <- proj_CAD_8@peakSet
 SMCvFIBRO_peak_diffscore <- cbind(as.vector(this_data@seqnames),
-                                  this_data@ranges@start,
-                                  this_data@ranges@start + this_data@ranges@width,
-                                  paste0("peak",seq(length(this_data@ranges@start))),
-                                  markersPeaks_FIBROvSMC@assays@data$FDR[[1]],
-                                  markersPeaks_FIBROvSMC@assays@data$Log2FC[[1]])
+								  this_data@ranges@start,
+								  this_data@ranges@start + this_data@ranges@width,
+								  paste0("peak",seq(length(this_data@ranges@start))),
+								  markersPeaks_FIBROvSMC@assays@data$FDR[[1]],
+								  markersPeaks_FIBROvSMC@assays@data$Log2FC[[1]])
 colnames(SMCvFIBRO_peak_diffscore) <- c("chrm","start","end","name","FIBROvSMC_FDR","FIBROvSMC_LFC")
 write.table(SMCvFIBRO_peak_diffscore,file="markerGenePeak_clusterCMP/RNAlabel_FIBROvsSMC_peak_diffscore.txt",row.names=F,col.names=T,sep="\t",quote=F)
 
@@ -834,32 +882,32 @@ plotPDF(pv, name = "markersPeaks_FIBROvSMC_volcano.pdf", ArchRProj = proj_CAD_8,
 
 # SMC related subcluster markerGene, markerPeak
 output_diffpeak_clusterCMP <- function(this_data,cellname){
-    out_data <- cbind(as.vector(this_data@seqnames),
-                      this_data@ranges@start,
-                      this_data@ranges@start + this_data@ranges@width,
-                      paste0(cellname,"_",seq(length(this_data@seqnames))),
-                      this_data$Log2FC,
-                      this_data$FDR)
-    write.table(out_data,file=paste0("markerGenePeak_clusterCMP/",cellname,"_markerPeak.bed"),quote=F,row.names=F,col.names=F,sep="\t")
+	out_data <- cbind(as.vector(this_data@seqnames),
+					  this_data@ranges@start,
+					  this_data@ranges@start + this_data@ranges@width,
+					  paste0(cellname,"_",seq(length(this_data@seqnames))),
+					  this_data$Log2FC,
+					  this_data$FDR)
+	write.table(out_data,file=paste0("markerGenePeak_clusterCMP/",cellname,"_markerPeak.bed"),quote=F,row.names=F,col.names=F,sep="\t")
 }
 output_markerGene_clusterCMP <- function(this_data,outname){
-    out_data <- cbind(as.vector(this_data$name),
-                      this_data$Log2FC,
-                      this_data$FDR)
-    colnames(out_data) <- c("symbol","log2FC","FDR")
-    write.table(out_data,file=paste0("markerGenePeak_clusterCMP/",outname,"_markerGene.txt"),quote=F,row.names=F,col.names=T,sep="\t")
+	out_data <- cbind(as.vector(this_data$name),
+					  this_data$Log2FC,
+					  this_data$FDR)
+	colnames(out_data) <- c("symbol","log2FC","FDR")
+	write.table(out_data,file=paste0("markerGenePeak_clusterCMP/",outname,"_markerGene.txt"),quote=F,row.names=F,col.names=T,sep="\t")
 }
 
 markerGenePeak_clusterCMP <- function(fgCluster,bgCluster,outname){
   ############ markerGene
   markersGS_clusterCMP <- getMarkerFeatures(
-      ArchRProj = proj_CAD_8, 
-      useMatrix = "GeneScoreMatrix", 
-      useGroups = c(fgCluster),
-      bgdGroups = c(bgCluster),
-      groupBy = "Clusters",
-      bias = c("TSSEnrichment", "log10(nFrags)"),
-      testMethod = "wilcoxon"
+	  ArchRProj = proj_CAD_8, 
+	  useMatrix = "GeneScoreMatrix", 
+	  useGroups = c(fgCluster),
+	  bgdGroups = c(bgCluster),
+	  groupBy = "Clusters",
+	  bias = c("TSSEnrichment", "log10(nFrags)"),
+	  testMethod = "wilcoxon"
   )
   markerListGS_clusterCMP <- getMarkers(markersGS_clusterCMP, cutOff = "FDR <= 0.01 & Log2FC >= 1")
   output_markerGene_clusterCMP(markerListGS_clusterCMP[[1]],outname)
@@ -887,36 +935,36 @@ proj_CAD_8$tmpClusters[which(proj_CAD_8$Clusters == "C6")] <- "C56"
 markerGenePeak_clusterCMP2 <- function(fgCluster,bgCluster,outname){
 
   markersGS_clusterCMP <- getMarkerFeatures(
-      ArchRProj = proj_CAD_8, 
-      useMatrix = "GeneScoreMatrix", 
-      useGroups = c(fgCluster),
-      bgdGroups = c(bgCluster),
-      groupBy = "tmpClusters",
-      bias = c("TSSEnrichment", "log10(nFrags)"),
-      testMethod = "wilcoxon"
+	  ArchRProj = proj_CAD_8, 
+	  useMatrix = "GeneScoreMatrix", 
+	  useGroups = c(fgCluster),
+	  bgdGroups = c(bgCluster),
+	  groupBy = "tmpClusters",
+	  bias = c("TSSEnrichment", "log10(nFrags)"),
+	  testMethod = "wilcoxon"
   )
   markerListGS_clusterCMP <- getMarkers(markersGS_clusterCMP, cutOff = "FDR <= 0.01 & Log2FC >= 1")
   output_markerGene_clusterCMP(markerListGS_clusterCMP[[1]],outname)
 
   ############ markerPeak
   markersPeaks_clusterCMP <- getMarkerFeatures(
-    ArchRProj = proj_CAD_8, 
-    useMatrix = "PeakMatrix", 
-    useGroups = c(fgCluster),
-    bgdGroups = c(bgCluster),
-    groupBy = "tmpClusters",
-    bias = c("TSSEnrichment", "log10(nFrags)"),
-    testMethod = "wilcoxon"
+	ArchRProj = proj_CAD_8, 
+	useMatrix = "PeakMatrix", 
+	useGroups = c(fgCluster),
+	bgdGroups = c(bgCluster),
+	groupBy = "tmpClusters",
+	bias = c("TSSEnrichment", "log10(nFrags)"),
+	testMethod = "wilcoxon"
   )
   markerListPeak_clusterCMP <- getMarkers(markersPeaks_clusterCMP, cutOff = "FDR <= 0.01 & Log2FC >= 1", returnGR = TRUE)
   output_diffpeak_clusterCMP(markerListPeak_clusterCMP[[1]],outname)
 
   ############ motif
   enrichMotifs_clusterCMP <- peakAnnoEnrichment(
-      seMarker = markersPeaks_clusterCMP,
-      ArchRProj = proj_CAD_8,
-      peakAnnotation = "Motif",
-      cutOff = "FDR <= 0.1 & Log2FC >= 0.5"
+	  seMarker = markersPeaks_clusterCMP,
+	  ArchRProj = proj_CAD_8,
+	  peakAnnotation = "Motif",
+	  cutOff = "FDR <= 0.1 & Log2FC >= 0.5"
   )
   write.table(enrichMotifs_clusterCMP@assays$data$mlog10Padj,file=paste0("markerGenePeak_clusterCMP/",outname,"_homerMotif.txt"), row.names=T,col.names=F,sep="\t",quote=F)
 
@@ -942,13 +990,13 @@ diseaseMKG <- function(celltype){
   print(table(NDcluster))
   #############marker gene
   markersGS_tmp <- getMarkerFeatures(
-    ArchRProj = proj_CAD_8, 
-    useMatrix = "GeneScoreMatrix", 
-    groupBy = "tmpCluster",
-    useGroups="Ischemic",
-    bgdGroups="Normal",
-    bias = c("TSSEnrichment", "log10(nFrags)"),
-    testMethod = "wilcoxon"
+	ArchRProj = proj_CAD_8, 
+	useMatrix = "GeneScoreMatrix", 
+	groupBy = "tmpCluster",
+	useGroups="Ischemic",
+	bgdGroups="Normal",
+	bias = c("TSSEnrichment", "log10(nFrags)"),
+	testMethod = "wilcoxon"
   )
   markerList_tmp <- getMarkers(markersGS_tmp, cutOff = "FDR <= 0.01 & Log2FC >= 0.58",)
   tmpdata <- as.matrix(markerList_tmp$Ischemic)[,c(5,7,8)]
@@ -957,45 +1005,45 @@ diseaseMKG <- function(celltype){
 
   ############# marker peak
   markersPeaks_tmp <- getMarkerFeatures(
-      ArchRProj = proj_CAD_8, 
-      useMatrix = "PeakMatrix", 
-      groupBy = "tmpCluster",
-    useGroups="Ischemic",
-    bgdGroups="Normal",
-    bias = c("TSSEnrichment", "log10(nFrags)"),
-    testMethod = "wilcoxon"
+	  ArchRProj = proj_CAD_8, 
+	  useMatrix = "PeakMatrix", 
+	  groupBy = "tmpCluster",
+	useGroups="Ischemic",
+	bgdGroups="Normal",
+	bias = c("TSSEnrichment", "log10(nFrags)"),
+	testMethod = "wilcoxon"
   )
   markerList_peak_tmp <- getMarkers(markersPeaks_tmp, cutOff = "FDR <= 0.01 & Log2FC >= 0.58", returnGR = TRUE)
   this_data <- markerList_peak_tmp$Ischemic
   cellname <- celltype
   out_data <- cbind(as.vector(this_data@seqnames),
-                    this_data@ranges@start,
-                    this_data@ranges@start + this_data@ranges@width,
-                    paste0(cellname,"_",seq(length(this_data@seqnames))),
-                    this_data$Log2FC,
-                    this_data$FDR)
+					this_data@ranges@start,
+					this_data@ranges@start + this_data@ranges@width,
+					paste0(cellname,"_",seq(length(this_data@seqnames))),
+					this_data$Log2FC,
+					this_data$FDR)
   write.table(out_data,file=paste0("markerGenePeak_disease_final/markerPeak_diseaseFC15_",cellname,".bed"),quote=F,row.names=F,col.names=F,sep="\t")
 
   markerList_peak_tmp <- getMarkers(markersPeaks_tmp, cutOff = "FDR <= 0.01 & Log2FC >= 1", returnGR = TRUE)
   this_data <- markerList_peak_tmp$Ischemic
   cellname <- celltype
   out_data <- cbind(as.vector(this_data@seqnames),
-                    this_data@ranges@start,
-                    this_data@ranges@start + this_data@ranges@width,
-                    paste0(cellname,"_",seq(length(this_data@seqnames))),
-                    this_data$Log2FC,
-                    this_data$FDR)
+					this_data@ranges@start,
+					this_data@ranges@start + this_data@ranges@width,
+					paste0(cellname,"_",seq(length(this_data@seqnames))),
+					this_data$Log2FC,
+					this_data$FDR)
   write.table(out_data,file=paste0("markerGenePeak_disease_final/markerPeak_diseaseFC2_",cellname,".bed"),quote=F,row.names=F,col.names=F,sep="\t")
 
   markerList_peak_tmp <- getMarkers(markersPeaks_tmp, cutOff = "FDR <= 0.01 ", returnGR = TRUE)
   this_data <- markerList_peak_tmp$Ischemic
   cellname <- celltype
   out_data <- cbind(as.vector(this_data@seqnames),
-                    this_data@ranges@start,
-                    this_data@ranges@start + this_data@ranges@width,
-                    paste0(cellname,"_",seq(length(this_data@seqnames))),
-                    this_data$Log2FC,
-                    this_data$FDR)
+					this_data@ranges@start,
+					this_data@ranges@start + this_data@ranges@width,
+					paste0(cellname,"_",seq(length(this_data@seqnames))),
+					this_data$Log2FC,
+					this_data$FDR)
   write.table(out_data,file=paste0("markerGenePeak_disease_final/markerPeak_diseaseALL_",cellname,".bed"),quote=F,row.names=F,col.names=F,sep="\t")
 
 }
@@ -1027,8 +1075,8 @@ thisMKG <- c("MYOCD",driverSMC)
 # scatter browser view
 p <- plotBrowserTrack(
   ArchRProj = proj_CAD_8,
-    plotSummary = c("bulkTrack", "scTrack", "geneTrack"),
-    sizes = c(8, 8, 4),
+	plotSummary = c("bulkTrack", "scTrack", "geneTrack"),
+	sizes = c(8, 8, 4),
   groupBy = "Clusters3", 
   geneSymbol = DSMCmarker, 
   useMatrix = NULL,
@@ -1042,23 +1090,23 @@ plotPDF(p,name="scatter_browserTrack_DSMCmarker.pdf", width = 8, height = 8, Arc
 
 geneset_scatter <- function(thisMKG,outname){
   pImp <- plotEmbedding(
-      ArchRProj = proj_CAD_8, 
-      colorBy = "GeneScoreMatrix", 
-      name = thisMKG, 
-      embedding = "UMAP",
-      imputeWeights = getImputeWeights(proj_CAD_8)
+	  ArchRProj = proj_CAD_8, 
+	  colorBy = "GeneScoreMatrix", 
+	  name = thisMKG, 
+	  embedding = "UMAP",
+	  imputeWeights = getImputeWeights(proj_CAD_8)
   )
   
   p2Imp <- lapply(pImp, function(x){
-      x + guides(color = FALSE, fill = FALSE) + 
-      theme_ArchR(baseSize = 6.5) +
-      theme(plot.margin = unit(c(0, 0, 0, 0), "cm")) +
-      theme(
-          axis.text.x=element_blank(), 
-          axis.ticks.x=element_blank(), 
-          axis.text.y=element_blank(), 
-          axis.ticks.y=element_blank()
-      )
+	  x + guides(color = FALSE, fill = FALSE) + 
+	  theme_ArchR(baseSize = 6.5) +
+	  theme(plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+	  theme(
+		  axis.text.x=element_blank(), 
+		  axis.ticks.x=element_blank(), 
+		  axis.text.y=element_blank(), 
+		  axis.ticks.y=element_blank()
+	  )
   })
   plotPDF(p2Imp, name = paste0("UMAP_geneScoreImpute_MKG_",outname,".pdf"), width = 5, height = 5, ArchRProj = proj_CAD_8, addDOC = FALSE)
 
@@ -1078,23 +1126,23 @@ geneset_scatter(NEWmarker,"NEWmarker")
 
 geneset_scatter_RNAintegration <- function(thisMKG,outname){
   pImp <- plotEmbedding(
-      ArchRProj = proj_CAD_8, 
-      colorBy = "GeneIntegrationMatrix", 
-      name = thisMKG, 
-      embedding = "UMAP",
-      imputeWeights = getImputeWeights(proj_CAD_8)
+	  ArchRProj = proj_CAD_8, 
+	  colorBy = "GeneIntegrationMatrix", 
+	  name = thisMKG, 
+	  embedding = "UMAP",
+	  imputeWeights = getImputeWeights(proj_CAD_8)
   )
   
   p2Imp <- lapply(pImp, function(x){
-      x + guides(color = FALSE, fill = FALSE) + 
-      theme_ArchR(baseSize = 6.5) +
-      theme(plot.margin = unit(c(0, 0, 0, 0), "cm")) +
-      theme(
-          axis.text.x=element_blank(), 
-          axis.ticks.x=element_blank(), 
-          axis.text.y=element_blank(), 
-          axis.ticks.y=element_blank()
-      )
+	  x + guides(color = FALSE, fill = FALSE) + 
+	  theme_ArchR(baseSize = 6.5) +
+	  theme(plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+	  theme(
+		  axis.text.x=element_blank(), 
+		  axis.ticks.x=element_blank(), 
+		  axis.text.y=element_blank(), 
+		  axis.ticks.y=element_blank()
+	  )
   })
   plotPDF(p2Imp, name = paste0("UMAP_GeneIntegration_MKG_",outname,".pdf"), width = 5, height = 5, ArchRProj = proj_CAD_8, addDOC = FALSE)
 }
@@ -1117,15 +1165,15 @@ markersGS <- readRDS(file="markerGene_celltype_final/markerGene_celltype_final.r
 markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & Log2FC >= 1")
 
 MKGall <- unique(c(markerList$Endothelial[,"name"],
-            markerList$SMC[,"name"],
-            markerList$Fibroblast[,"name"],
-            markerList$Pericyte[,"name"],
-            markerList$Macrophage[,"name"],
-            markerList$Mast[,"name"],
-            markerList$unknown[,"name"],
-            markerList$Plasma[,"name"],
-            markerList$T[,"name"]
-            ))
+			markerList$SMC[,"name"],
+			markerList$Fibroblast[,"name"],
+			markerList$Pericyte[,"name"],
+			markerList$Macrophage[,"name"],
+			markerList$Mast[,"name"],
+			markerList$unknown[,"name"],
+			markerList$Plasma[,"name"],
+			markerList$T[,"name"]
+			))
 
 celltypeIDX <- c("Endothelial","SMC","Fibroblast","Pericyte","Macrophage","Mast","unknown","Plasma","T")
 MKG_GS <- celltype_GS[MKGall,celltypeIDX]
@@ -1183,12 +1231,12 @@ dev.off()
 
 cluster_trajectory <- function(trajectory, outname){
   tmpProj <- addTrajectory(
-    ArchRProj = proj_CAD_8, 
-    name = "Trajectory", 
-    groupBy = "Clusters",
-    trajectory = trajectory, 
-    embedding = "UMAP", 
-    force = TRUE
+	ArchRProj = proj_CAD_8, 
+	name = "Trajectory", 
+	groupBy = "Clusters",
+	trajectory = trajectory, 
+	embedding = "UMAP", 
+	force = TRUE
 )
   p <- plotTrajectory(tmpProj, trajectory = "Trajectory", colorBy = "cellColData", name = "Trajectory")
   plotPDF(p, name = paste0("Trajectory_",outname,"_UMAP_final.pdf"), width = 5, height = 5, ArchRProj = tmpProj, addDOC = FALSE)

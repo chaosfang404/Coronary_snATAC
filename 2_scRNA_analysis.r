@@ -4,6 +4,8 @@ pacman::p_load(data.table,magrittr,Seurat,ggplot2,patchwork)
 set.seed(1)
 
 result_dir <- "scRNA_analysis_result"
+if(!dir.exists(result_dir)){dir.create(result_dir)}
+
 
 # the input data GSE131778_human_coronary_scRNAseq_wirka_et_al_GEO.txt was downloaded from GEO, GSE131778, https://ftp.ncbi.nlm.nih.gov/geo/series/GSE131nnn/GSE131778/suppl/GSE131778%5Fhuman%5Fcoronary%5FscRNAseq%5Fwirka%5Fet%5Fal%5FGEO%2Etxt%2Egz
 data_raw <- fread(
@@ -35,8 +37,6 @@ plot1 + plot2
 dev.off()
 
 # QC cell filtering and normalization and highvar genes selection
-
-
 genes_expCellNum <- apply(
 						data_raw@assays$RNA@counts,
 						1,
@@ -55,6 +55,11 @@ data_highVar <- data_raw[which(genes_expCellNum >=5),] |>
 					selection.method = "vst",
 					nfeatures = 2000
 				)
+
+top10_highVar_genes <-	data_highVar |>
+						VariableFeatures() |>
+						head(10)
+
 pdf_save("2.highVar_genes_selection_scatter")
 plot1 <- VariableFeaturePlot(data_highVar)
 plot2 <- LabelPoints(plot = plot1, points = top10_highVar_genes, repel = TRUE)
@@ -85,9 +90,7 @@ dev.off()
 
 # determine the dim
 data_PCA_ex <-	data_PCA |> 
-				JackStraw(
-					num.replicate = 100
-				) |>
+				JackStraw(num.replicate = 100) |>
 				ScoreJackStraw()
 
 pdf_save("6.PCA_DiffDim_cmp_v1")
@@ -242,4 +245,9 @@ fwrite(
 	col.names = T,
 	sep = "\t",
 	quote = F
+)
+
+saveRDS(
+	data_UMAPtsne_K10,
+	file = file.path(result_dir,"scRNA_PC10.rds")
 )
