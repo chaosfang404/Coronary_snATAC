@@ -2,14 +2,17 @@
 # you need to install Seural package 
 pacman::p_load(ArchR,parallel)
 set.seed(1)
-addArchRThreads(threads = 16) 
+addArchRThreads(threads = 70) 
 addArchRGenome("hg38")
 
 result_dir <- "scATAC_analysis_result"
 if(!dir.exists(result_dir)){dir.create(result_dir)}
 
-id <- paste0("sc",c("AA","AB","AC","AH","AI"))
+number_of_id <- 44
+id <- paste0("sc",c(LETTERS[1:26],paste0("A",LETTERS[1:(number_of_id - 26)])))
+
 fragment_file <- paste0(id,"/outs/fragments.tsv.gz")
+#ArrowFiles <- paste0(id,".arrow")
 
 ArrowFiles <-	createArrowFiles(
 					inputFiles = fragment_file,
@@ -33,7 +36,8 @@ doubScores <-	addDoubletScores(
 					k = 10, #Refers to how many cells near a "pseudo-doublet" to count.
 					knnMethod = "UMAP", #Refers to the embedding to use for nearest neighbor search.
 					LSIMethod = 1,
-					force=TRUE
+					force = TRUE,
+					threads = getArchRThreads()
 				)
 
 proj_CAD_1 <- proj_CAD
@@ -163,7 +167,7 @@ proj_CAD_2_HAR <-	addClusters(
 						seed = 1
 					)
 
-multi_pe_plot <- function(names,proj,file_name)
+pe_plot <- function(names,proj,file_name)
 {
 	lapply(
 		names,
@@ -187,7 +191,7 @@ multi_pe_plot <- function(names,proj,file_name)
 }
 
 # QC score projected on UMAP
-multi_pe_plot(
+pe_plot(
 	c(
 		"Sample",
 		"Clusters",
@@ -230,7 +234,7 @@ confusionmap <-	function(
 confusionmap(proj_CAD_2,"6.confusionMap_heatmap_LSI.pdf")
 confusionmap(proj_CAD_2_HAR,"7.confusionMap_heatmap_HAR.pdf")
 
-multi_pe_plot(
+pe_plot(
 	c(
 		"Sample",
 		"Clusters",
@@ -275,8 +279,8 @@ useMKG <- intersect(c(DSMCmarker,MSMCmarker,Emarker,Tmarker,Macrophage,PericyteM
 markerGenes <- useMKG#c(DSMCmarker,MSMCmarker,Emarker,Tmarker)
 
 # integration with scRNAseq data
-seRNA <- readRDS("scRNA_analysis_result/scRNA_PC10.rds");
-celltype_meta <- fread("scRNA_analysis_result/PC10_celltype_assignment.txt")
+seRNA <- readRDS("scRNA/scRNA_analysis_result/scRNA_PC10.rds");
+celltype_meta <- fread("sc/RNA/scRNA_analysis_result/PC10_celltype_assignment.txt")
 
 CT1 <- as.vector(celltype_meta[,"celltype"])
 CT1[which(celltype_meta[,"celltype"]=="T/NK")] <- "T_NK"
@@ -287,13 +291,19 @@ seRNA$celltype <- as.factor(seRNA$celltype)
 pal_RNAcelltype <- paletteDiscrete(values = seRNA$celltype)
 pal_RNAcelltype[c("Fibroblast","Endothelial","Macrophage","Fibro","T_NK","SMC","Pericyte1","unknown1",
 				  "Pericyte2","B","Plasma","unknown2","Neuron","unknown3","Mast")] <- rainbow(15)
-p1 <- plotEmbedding(
+plotEmbedding(
 	proj_CAD_2, 
 	colorBy = "cellColData", 
 	name = "predictedGroup_Un", 
 	pal = pal_RNAcelltype
+) |>
+plotPDF(
+	name = "UMAP_RNAIntegration_final.pdf", 
+	ArchRProj = proj_CAD_2, 
+	addDOC = FALSE, 
+	width = 5, 
+	height = 5
 )
-plotPDF(p1, name = "UMAP_RNAIntegration_final.pdf", ArchRProj = proj_CAD_2, addDOC = FALSE, width = 5, height = 5)
 
 proj_CAD_3 <- addGeneIntegrationMatrix(
 	ArchRProj = proj_CAD_2, 
