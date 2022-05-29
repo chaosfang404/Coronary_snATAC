@@ -12,7 +12,7 @@ number_of_id <- 44
 id <- paste0("sc",c(LETTERS[1:26],paste0("A",LETTERS[1:(number_of_id - 26)])))
 
 fragment_file <- paste0(id,"/outs/fragments.tsv.gz")
-#ArrowFiles <- paste0(id,".arrow")
+#ArrowFiles <- list.files(getwd(),".arrow")
 
 ArrowFiles <-	createArrowFiles(
 					inputFiles = fragment_file,
